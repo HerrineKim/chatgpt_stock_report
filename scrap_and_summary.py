@@ -13,6 +13,7 @@ import naver_research
 import telegram_notify
 
 KST = timezone(timedelta(hours=9))
+AI_LABELS = {"openai": "ChatGPT", "claude": "Claude"}
 
 
 def extract_text_from_pdf(pdf_url):
@@ -157,12 +158,12 @@ def main(args):
     raw_summaries = []
     for item, report in tqdm(reports):
         try:
-            raw_summaries.append(llm.generate("openai", "summary", base_prompt, report, api_key=args.api_key))
+            raw_summaries.append(llm.generate(args.provider, "summary", base_prompt, report, api_key=args.api_key))
         except Exception as e:
             print(f"✗ Summary failed for {item.get('itemName')}: {e}")
 
     if reports and not raw_summaries:
-        raise RuntimeError("All summaries failed. Check the OpenAI API key and model access.")
+        raise RuntimeError(f"All summaries failed. Check the {args.provider} API key and model access.")
 
     # Process summaries: sort by company name and add numbering for duplicates
     processed_summaries = process_and_sort_summaries(raw_summaries)
@@ -181,14 +182,15 @@ def main(args):
 
             # Request market insight
             market_insight = llm.generate(
-                "openai", "insight", insight_system_prompt, all_summaries_text, api_key=args.api_key
+                args.provider, "insight", insight_system_prompt, all_summaries_text, api_key=args.api_key
             )
         except Exception as e:
             print(f"Failed to generate market insight: {e}")
             market_insight = ""
 
     # Build final summary with insight at the top
-    final_summary = [f"# {today} stock report"]
+    ai_label = AI_LABELS[args.provider]
+    final_summary = [f"# {today} stock report", f"> 요약: {ai_label} ({', '.join(llm.MODELS[args.provider].values())})"]
 
     if market_insight:
         final_summary.append(market_insight)
@@ -204,19 +206,27 @@ def main(args):
 
     if args.telegram_token and args.telegram_chat_id:
         page_url = f"https://github.com/{args.github_repo}/blob/main/{folder_path}/README.md"
-        messages = telegram_notify.build_messages(today, market_insight, [item for item, _ in reports], page_url)
+        messages = telegram_notify.build_messages(
+            today, market_insight, [item for item, _ in reports], page_url, ai_label=ai_label
+        )
         telegram_notify.send_messages(args.telegram_token, args.telegram_chat_id, messages)
         print(f"Sent {len(messages)} Telegram message(s)")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api_key", type=str, default=os.environ.get("OPENAI_API_KEY", ""))
+    parser.add_argument(
+        "--provider", choices=sorted(llm.MODELS), default=os.environ.get("AI_PROVIDER") or "openai"
+    )
+    parser.add_argument("--api_key", type=str, default="", help="기본값: provider에 맞는 환경 변수")
     parser.add_argument("--telegram_token", type=str, default=os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     parser.add_argument("--telegram_chat_id", type=str, default=os.environ.get("TELEGRAM_CHAT_ID", ""))
     parser.add_argument(
         "--github_repo", type=str, default=os.environ.get("GITHUB_REPOSITORY", "HerrineKim/chatgpt_stock_report")
     )
     args = parser.parse_args()
+    args.api_key = args.api_key or os.environ.get(llm.API_KEY_ENV[args.provider], "")
+    if not args.api_key:
+        parser.error(f"{llm.API_KEY_ENV[args.provider]} is not set for provider '{args.provider}'")
 
     main(args)

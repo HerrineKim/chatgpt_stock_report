@@ -62,8 +62,8 @@ def split_text(text, limit=MAX_MESSAGE_LENGTH):
     return chunks
 
 
-def build_messages(today, insight_markdown, reports, page_url):
-    header = f"📈 {today} 증권사 리포트 요약"
+def build_messages(today, insight_markdown, reports, page_url, ai_label=None):
+    header = f"📈 {today} 증권사 리포트 요약" + (f" ({ai_label})" if ai_label else "")
     if not reports:
         return [f"{header}\n\n오늘 발행된 종목 리포트가 없습니다."]
 

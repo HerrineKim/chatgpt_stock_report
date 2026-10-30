@@ -74,3 +74,9 @@ def test_should_post_each_message_to_chat():
     assert [s[0] for s in sent] == ["https://api.telegram.org/botTOKEN/sendMessage"] * 2
     assert [s[1]["text"] for s in sent] == ["a", "b"]
     assert sent[0][1]["chat_id"] == "123"
+
+
+def test_should_show_which_ai_wrote_the_summary_in_header():
+    messages = telegram_notify.build_messages("2026.10.30", "", REPORTS, "https://link", ai_label="Claude")
+
+    assert messages[0].startswith("📈 2026.10.30 증권사 리포트 요약 (Claude)")
