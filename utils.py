@@ -1,5 +1,4 @@
 import time
-import openai
 from openai import OpenAI
 
 
@@ -24,16 +23,16 @@ def make_requests(engine, prompts=None, api_key=None, system_prompt=None, user_p
     else:
         raise ValueError("Either 'prompts' or both 'system_prompt' and 'user_prompt' must be provided")
 
-    while retry_cnt <= retries:
+    while True:
         try:
-            response = client.chat.completions.create(
+            return client.chat.completions.create(
                 model=engine,
                 messages=messages
             )
-            break
-        except:
-            print(f"Retrying in {backoff_time} seconds...")
+        except Exception as e:
+            if retry_cnt >= retries:
+                raise
+            print(f"{type(e).__name__}: {e}. Retrying in {backoff_time} seconds...")
             time.sleep(backoff_time)
             backoff_time *= 1.5
             retry_cnt += 1
-    return response

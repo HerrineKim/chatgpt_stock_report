@@ -1,49 +1,18 @@
 import argparse
 import os
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import tempfile
-from urllib.parse import urljoin
 
 import requests
-from bs4 import BeautifulSoup
 from tqdm import tqdm
 import fitz  # PyMuPDF
 
+import naver_research
+import telegram_notify
 from utils import make_requests
 
-
-def detect_pdf_link(soup, base_url):
-    """
-    Detect PDF download link from BeautifulSoup object
-    Returns: PDF URL or None
-    """
-    # Method 1: Look for stock.pstatic.net PDF links (most reliable for Naver Finance)
-    for link in soup.find_all("a", href=True):
-        href = link.get("href", "")
-        if "stock.pstatic.net" in href and ".pdf" in href.lower():
-            return href  # Already absolute URL
-
-    # Method 2: Try CSS selector for .pdf extension
-    pdf_links = soup.select("a[href$='.pdf']")
-    if pdf_links:
-        href = pdf_links[0].get("href")
-        return construct_full_url(base_url, href)
-
-    # Method 3: Search for any .pdf in href attribute
-    for link in soup.find_all("a", href=True):
-        href = link.get("href", "")
-        if ".pdf" in href.lower():
-            return construct_full_url(base_url, href)
-
-    return None
-
-
-def construct_full_url(base_url, href):
-    """Handle relative and absolute URLs"""
-    if href.startswith("http"):
-        return href
-    return urljoin(base_url, href)
+KST = timezone(timedelta(hours=9))
 
 
 def extract_text_from_pdf(pdf_url):
@@ -80,43 +49,6 @@ def extract_text_from_pdf(pdf_url):
         # Cleanup temp file
         if temp_pdf_path and os.path.exists(temp_pdf_path):
             os.remove(temp_pdf_path)
-
-
-def extract_text_from_html(soup):
-    """
-    Extract text from HTML (current method)
-    Returns: extracted text
-    """
-    tags = soup.select("#contentarea_left > div > table > tr")
-    report = ""
-    for tag in tags:
-        tag_text = tag.text.replace("\t", "").lstrip().rstrip()
-        report += tag_text + "\n"
-    return report
-
-
-def extract_date_from_text(text):
-    """
-    Extract date from text in various formats and normalize to YYYY.MM.DD
-    Supports:
-    - 2025.12.26 (dot format)
-    - 2025년 12월 26일 (Korean format)
-    Returns: normalized date string (YYYY.MM.DD) or None
-    """
-    # Try dot format first (2025.12.26)
-    match = re.search(r"(\d{4})\.(\d{2})\.(\d{2})", text)
-    if match:
-        return f"{match.group(1)}.{match.group(2)}.{match.group(3)}"
-
-    # Try Korean format (2025년 12월 26일)
-    match = re.search(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일", text)
-    if match:
-        year = match.group(1)
-        month = match.group(2).zfill(2)
-        day = match.group(3).zfill(2)
-        return f"{year}.{month}.{day}"
-
-    return None
 
 
 def extract_company_name(summary_text):
@@ -185,78 +117,31 @@ def process_and_sort_summaries(summaries):
     return processed_summaries
 
 
-def main(args):
-
-    base_url = "https://finance.naver.com/research/"
-    list_url = base_url + "company_list.naver"
-
-    ## 1page에 있는 url들을 크롤링함
-    # Add User-Agent to avoid bot detection
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    response = requests.get(list_url, headers=headers)
-    html = response.text
-    soup = BeautifulSoup(html, "html.parser")
-    report_raw_tags = soup.select("#contentarea_left > div > table > tr > td > a")
-
-    report_urls = []
-    for report_raw_tag in report_raw_tags:
-        if report_raw_tag.attrs["href"].startswith("company"):
-            report_urls.append(base_url + report_raw_tag.attrs["href"])
-
-    print(f"Found {len(report_urls)} report URLs to process")
-    ###############################################################################
-
-    # 각 url에서 그날의 레포트를 크롤링함
-    datetime_utc = datetime.utcnow()
-    datetime_kst = datetime_utc + timedelta(hours=9)
-    today = datetime_kst.today().date().strftime("%Y.%m.%d")
-    folder_path = today.replace(".", "/")
-
-    os.makedirs(folder_path, exist_ok=True)
+def collect_reports(day):
+    """day(YYYY-MM-DD)의 종목 리포트를 모아 (메타데이터, LLM 입력 본문) 목록으로 돌려준다."""
+    items = naver_research.fetch_company_reports(day)
+    print(f"Found {len(items)} reports for {day}")
 
     reports = []
-    for report_url in report_urls:
+    for item in tqdm(items):
+        pdf_text = None
         try:
-            report_response = requests.get(report_url, headers=headers, timeout=30)
-            report_response.raise_for_status()
-            report_html = report_response.text
-            report_soup = BeautifulSoup(report_html, "html.parser")
-
-            # Extract HTML text for date checking (use published date, not PDF creation date)
-            html_text = extract_text_from_html(report_soup)
-
-            # Date validation using HTML (published date) - supports both "2025.12.26" and "2025년 12월 26일"
-            report_day = extract_date_from_text(html_text)
-
-            if not report_day:
-                print(f"✗ No date found: {report_url[:80]}...")
-                continue  # Skip if no date found
-
-            if report_day != today:
-                continue  # Skip non-today reports, don't break the loop
-
-            # If date matches, try to get full content from PDF (more complete)
-            pdf_url = detect_pdf_link(report_soup, report_url)
-            report = None
-
+            pdf_url = naver_research.fetch_attach_url(item["nid"])
             if pdf_url:
-                report = extract_text_from_pdf(pdf_url)
-
-            # If PDF extraction failed or no PDF, use HTML
-            if not report:
-                report = html_text
-
-            reports.append(report)
-            print(f"✓ Collected report: {report_url[:80]}... (Date: {report_day})")
-
+                pdf_text = extract_text_from_pdf(pdf_url)
         except requests.RequestException as e:
-            print(f"✗ Failed to fetch {report_url}: {e}")
-            continue
-        except Exception as e:
-            print(f"✗ Error processing {report_url}: {e}")
-            continue
+            print(f"✗ Failed to fetch detail {item['nid']}: {e}")
+        reports.append((item, naver_research.build_report_input(item, pdf_text)))
+    return reports
+
+
+def main(args):
+    now_kst = datetime.now(KST)
+    today = now_kst.strftime("%Y.%m.%d")
+    folder_path = today.replace(".", "/")
+    os.makedirs(folder_path, exist_ok=True)
+
+    reports = collect_reports(now_kst.strftime("%Y-%m-%d"))
 
     print(f"\n{'='*80}")
     print(f"Total reports collected for {today}: {len(reports)}")
@@ -270,7 +155,7 @@ def main(args):
 
     # Generate summaries
     raw_summaries = []
-    for report in tqdm(reports):
+    for item, report in tqdm(reports):
         try:
             chat_gpt_response = make_requests(
                 engine="gpt-5-mini",
@@ -279,8 +164,11 @@ def main(args):
                 api_key=args.api_key,
             )
             raw_summaries.append(chat_gpt_response.choices[0].message.content)
-        except:
-            continue
+        except Exception as e:
+            print(f"✗ Summary failed for {item.get('itemName')}: {e}")
+
+    if reports and not raw_summaries:
+        raise RuntimeError("All summaries failed. Check the OpenAI API key and model access.")
 
     # Process summaries: sort by company name and add numbering for duplicates
     processed_summaries = process_and_sort_summaries(raw_summaries)
@@ -324,13 +212,20 @@ def main(args):
     with open("README.md", "w") as file:
         file.write("\n\n".join(final_summary))
 
+    if args.telegram_token and args.telegram_chat_id:
+        page_url = f"https://github.com/{args.github_repo}/blob/main/{folder_path}/README.md"
+        messages = telegram_notify.build_messages(today, market_insight, [item for item, _ in reports], page_url)
+        telegram_notify.send_messages(args.telegram_token, args.telegram_chat_id, messages)
+        print(f"Sent {len(messages)} Telegram message(s)")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--api_key", type=str, default=os.environ.get("OPENAI_API_KEY", ""))
+    parser.add_argument("--telegram_token", type=str, default=os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+    parser.add_argument("--telegram_chat_id", type=str, default=os.environ.get("TELEGRAM_CHAT_ID", ""))
     parser.add_argument(
-        "--api_key",
-        type=str,
-        default="",
+        "--github_repo", type=str, default=os.environ.get("GITHUB_REPOSITORY", "HerrineKim/chatgpt_stock_report")
     )
     args = parser.parse_args()
 
