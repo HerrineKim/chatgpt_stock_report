@@ -31,6 +31,7 @@ jobs:
     - name: Test
       run: python -m pytest -q
     - name: Run Scripts
+      id: run
       env:
         AI_PROVIDER: ${{ inputs.provider || vars.AI_PROVIDER || 'openai' }}
         OPENAI_API_KEY: ${{ secrets.OPEN_API_KEY }}
@@ -39,6 +40,8 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python scrap_and_summary.py
     - name: Commits
+      # 요약 파일은 텔레그램 발송 전에 저장되므로, 발송이 실패해도 커밋한다
+      if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
       run: |
         git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
