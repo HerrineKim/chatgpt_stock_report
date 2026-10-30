@@ -6,7 +6,7 @@ from openai import OpenAI
 # task별 모델: summary는 리포트마다(하루 100건 안팎) 부르고, insight는 하루 한 번 부른다.
 MODELS = {
     "openai": {"summary": "gpt-5-mini", "insight": "gpt-5"},
-    "claude": {"summary": "claude-haiku-5-5", "insight": "claude-opus-5-5"},
+    "claude": {"summary": "claude-haiku-5-5", "insight": "claude-haiku-5-5"},
 }
 API_KEY_ENV = {"openai": "OPENAI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
 # 거절(refusal) 시 서버가 다른 모델로 이어 받게 한다. Haiku는 지원하지 않는다.

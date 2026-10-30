@@ -75,16 +75,14 @@ def test_should_call_claude_summary_model_with_system_prompt():
     assert kwargs["messages"] == [{"role": "user", "content": "리포트"}]
 
 
-def test_should_call_claude_insight_model_with_refusal_fallback():
+def test_should_use_haiku_for_claude_insight_too():
     client = FakeAnthropic()
 
     llm.generate("claude", "insight", "시스템", "요약들", client=client)
 
     endpoint, kwargs = client.calls[0]
-    assert endpoint == "beta"
-    assert kwargs["model"] == "claude-opus-5-5"
-    assert kwargs["fallbacks"] == "default"
-    assert kwargs["betas"] == ["server-side-fallback-2026-07-01"]
+    assert endpoint == "messages"
+    assert kwargs["model"] == "claude-haiku-5-5"
 
 
 def test_should_raise_when_claude_refuses():

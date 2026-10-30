@@ -20,7 +20,7 @@ GitHub 저장소 Settings → Secrets and variables → Actions에 아래 3개�
 | 설정 | 요약(리포트별) | 인사이트(하루 1번) |
 | --- | --- | --- |
 | `openai` (기본) | gpt-5-mini | gpt-5 |
-| `claude` | claude-haiku-5-5 | claude-opus-5-5 |
+| `claude` | claude-haiku-5-5 | claude-haiku-5-5 |
 
 - 매일 자동 실행: Settings → Secrets and variables → Actions → Variables에 `AI_PROVIDER`를 `openai` 또는 `claude`로 둡니다. 없으면 `openai`.
 - 한 번만 바꿔 실행: Actions → Scraper & Summary → Run workflow에서 provider를 고릅니다.

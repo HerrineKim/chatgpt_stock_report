@@ -190,7 +190,7 @@ def main(args):
 
     # Build final summary with insight at the top
     ai_label = AI_LABELS[args.provider]
-    final_summary = [f"# {today} stock report", f"> 요약: {ai_label} ({', '.join(llm.MODELS[args.provider].values())})"]
+    final_summary = [f"# {today} stock report", f"> 요약: {ai_label} ({', '.join(dict.fromkeys(llm.MODELS[args.provider].values()))})"]
 
     if market_insight:
         final_summary.append(market_insight)
