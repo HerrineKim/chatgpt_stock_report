@@ -8,9 +8,9 @@ import requests
 from tqdm import tqdm
 import fitz  # PyMuPDF
 
+import llm
 import naver_research
 import telegram_notify
-from utils import make_requests
 
 KST = timezone(timedelta(hours=9))
 
@@ -157,13 +157,7 @@ def main(args):
     raw_summaries = []
     for item, report in tqdm(reports):
         try:
-            chat_gpt_response = make_requests(
-                engine="gpt-5-mini",
-                system_prompt=base_prompt,
-                user_prompt=report,
-                api_key=args.api_key,
-            )
-            raw_summaries.append(chat_gpt_response.choices[0].message.content)
+            raw_summaries.append(llm.generate("openai", "summary", base_prompt, report, api_key=args.api_key))
         except Exception as e:
             print(f"✗ Summary failed for {item.get('itemName')}: {e}")
 
@@ -186,13 +180,9 @@ def main(args):
             all_summaries_text = "\n\n---\n\n".join(processed_summaries)
 
             # Request market insight
-            insight_response = make_requests(
-                engine="gpt-5",
-                system_prompt=insight_system_prompt,
-                user_prompt=all_summaries_text,
-                api_key=args.api_key,
+            market_insight = llm.generate(
+                "openai", "insight", insight_system_prompt, all_summaries_text, api_key=args.api_key
             )
-            market_insight = insight_response.choices[0].message.content
         except Exception as e:
             print(f"Failed to generate market insight: {e}")
             market_insight = ""
