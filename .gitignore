@@ -4,3 +4,5 @@ test.py
 test_*.py
 *.backup
 .claude/
+!tests/test_*.py
+.omc/
