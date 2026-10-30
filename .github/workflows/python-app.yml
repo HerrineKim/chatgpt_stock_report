@@ -51,6 +51,8 @@ jobs:
           echo "No changes to commit"
         else
           git commit -m "Auto - daily report summary"
+          # 실행 중에 main이 바뀌었어도 밀리지 않도록 최신 main 위로 올린 뒤 push한다
+          git pull --rebase origin main
           git push origin main
         fi
     - name: Notify failure
