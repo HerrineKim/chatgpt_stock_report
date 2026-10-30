@@ -9,8 +9,6 @@ MODELS = {
     "claude": {"summary": "claude-haiku-5-5", "insight": "claude-haiku-5-5"},
 }
 API_KEY_ENV = {"openai": "OPENAI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
-# 거절(refusal) 시 서버가 다른 모델로 이어 받게 한다. Haiku는 지원하지 않는다.
-CLAUDE_FALLBACK_MODELS = {"claude-opus-5-5"}
 
 
 def generate(provider, task, system_prompt, user_prompt, api_key=None, client=None):
@@ -25,18 +23,12 @@ def generate(provider, task, system_prompt, user_prompt, api_key=None, client=No
 
 def _claude(model, system_prompt, user_prompt, client):
     # 재시도(429, 5xx, 연결 오류)는 SDK가 기본으로 처리한다.
-    params = {
-        "model": model,
-        "max_tokens": 16000,
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": user_prompt}],
-    }
-    if model in CLAUDE_FALLBACK_MODELS:
-        response = client.beta.messages.create(
-            **params, betas=["server-side-fallback-2026-07-01"], fallbacks="default"
-        )
-    else:
-        response = client.messages.create(**params)
+    response = client.messages.create(
+        model=model,
+        max_tokens=16000,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
     if response.stop_reason == "refusal":
         category = getattr(response.stop_details, "category", None)
         raise RuntimeError(f"{model} refused the request (category: {category})")

@@ -47,7 +47,6 @@ class FakeAnthropic:
         self.calls = []
         self.stop_reason = stop_reason
         self.messages = SimpleNamespace(create=self._create("messages"))
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create("beta")))
 
     def _create(self, endpoint):
         def create(**kwargs):
