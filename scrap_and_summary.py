@@ -71,6 +71,15 @@ def extract_company_name(summary_text):
     return "Unknown"
 
 
+def normalize_heading(summary):
+    """첫 ## 제목을 '## 회사명'으로 맞춘다. 대괄호와 종목코드 괄호('(112610)')는 뗀다."""
+    def clean(match):
+        name = re.sub(r"\s*\([^)]*\d{6}[^)]*\)", "", match.group(1)).strip()
+        return f"## {name}"
+
+    return re.sub(r"^##\s*\[?(.+?)\]?[ \t]*$", clean, summary, count=1, flags=re.M)
+
+
 def process_and_sort_summaries(summaries):
     """
     Process summaries: add numbering for duplicates and sort by company name
@@ -78,7 +87,7 @@ def process_and_sort_summaries(summaries):
     """
     # Extract company names and pair with summaries
     summary_data = []
-    for summary in summaries:
+    for summary in map(normalize_heading, summaries):
         company_name = extract_company_name(summary)
         summary_data.append({"company": company_name, "content": summary})
 
