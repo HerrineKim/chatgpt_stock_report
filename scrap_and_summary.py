@@ -10,6 +10,7 @@ import fitz  # PyMuPDF
 
 import llm
 import naver_research
+import report_index
 import telegram_notify
 
 KST = timezone(timedelta(hours=9))
@@ -201,8 +202,11 @@ def main(args):
     with open(os.path.join(folder_path, "README.md"), "w") as file:
         file.write("\n\n".join(final_summary))
 
-    with open("README.md", "w") as file:
-        file.write("\n\n".join(final_summary))
+    # 루트 README는 프로젝트 소개라서 최신 리포트 링크 구간만 바꾼다
+    with open("README.md", encoding="utf-8") as file:
+        readme = file.read()
+    with open("README.md", "w", encoding="utf-8") as file:
+        file.write(report_index.update_latest(readme, today, folder_path))
 
     if args.telegram_token and args.telegram_chat_id:
         page_url = f"https://github.com/{args.github_repo}/blob/main/{folder_path}/README.md"
