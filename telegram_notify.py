@@ -1,4 +1,5 @@
 import re
+import time
 
 import requests
 
@@ -77,12 +78,30 @@ def build_messages(today, insight_markdown, reports, page_url, ai_label=None):
     return split_text("\n\n".join(sections))
 
 
-def send_messages(token, chat_id, messages, session=requests):
+RETRY_DELAYS = (5, 15, 30)  # 실패 후 재시도 전 대기(초). 시도는 최대 len + 1번
+
+
+def post_with_retry(session, url, payload, sleep=time.sleep):
+    """텔레그램 API가 잠깐 응답하지 않거나(타임아웃·연결 오류) 429/5xx를 주면 기다렸다 다시 보낸다."""
+    for attempt, delay in enumerate((*RETRY_DELAYS, None), start=1):
+        try:
+            response = session.post(url, json=payload, timeout=30)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as error:
+            if delay is None:
+                raise
+            print(f"Telegram 발송 재시도 {attempt}/{len(RETRY_DELAYS)}: {error}")
+        else:
+            status = getattr(response, "status_code", 200)
+            if delay is None or not (status == 429 or status >= 500):
+                response.raise_for_status()
+                return response
+            print(f"Telegram 발송 재시도 {attempt}/{len(RETRY_DELAYS)}: HTTP {status}")
+        sleep(delay)
+
+
+def send_messages(token, chat_id, messages, session=requests, sleep=time.sleep):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     for message in messages:
-        response = session.post(
-            url,
-            json={"chat_id": chat_id, "text": message, "disable_web_page_preview": True},
-            timeout=30,
+        post_with_retry(
+            session, url, {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}, sleep=sleep
         )
-        response.raise_for_status()

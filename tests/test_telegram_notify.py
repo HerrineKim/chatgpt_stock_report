@@ -1,3 +1,6 @@
+import pytest
+import requests
+
 import telegram_notify
 
 
@@ -80,3 +83,64 @@ def test_should_show_which_ai_wrote_the_summary_in_header():
     messages = telegram_notify.build_messages("2026.10.30", "", REPORTS, "https://link", ai_label="Claude")
 
     assert messages[0].startswith("📈 2026.10.30 증권사 리포트 요약 (Claude)")
+
+
+class FakeResponse:
+    def __init__(self, status_code=200):
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(f"HTTP {self.status_code}")
+
+
+class FlakySession:
+    """미리 정한 결과(예외 또는 상태 코드)를 차례로 돌려준다."""
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def post(self, url, json=None, timeout=None):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return FakeResponse(outcome)
+
+
+def test_should_retry_when_telegram_times_out():
+    session = FlakySession([requests.exceptions.ReadTimeout("timed out"), 200])
+    waits = []
+
+    telegram_notify.send_messages("TOKEN", "123", ["a"], session=session, sleep=waits.append)
+
+    assert session.calls == 2
+    assert waits == [telegram_notify.RETRY_DELAYS[0]]
+
+
+def test_should_retry_on_server_error_and_rate_limit():
+    session = FlakySession([502, 429, 200])
+
+    telegram_notify.send_messages("TOKEN", "123", ["a"], session=session, sleep=lambda _: None)
+
+    assert session.calls == 3
+
+
+def test_should_give_up_after_last_retry():
+    attempts = len(telegram_notify.RETRY_DELAYS) + 1
+    session = FlakySession([requests.exceptions.ConnectionError("down")] * attempts)
+
+    with pytest.raises(requests.exceptions.ConnectionError):
+        telegram_notify.send_messages("TOKEN", "123", ["a"], session=session, sleep=lambda _: None)
+
+    assert session.calls == attempts
+
+
+def test_should_not_retry_on_client_error():
+    session = FlakySession([400])
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        telegram_notify.send_messages("TOKEN", "123", ["a"], session=session, sleep=lambda _: None)
+
+    assert session.calls == 1
