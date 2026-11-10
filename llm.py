@@ -9,6 +9,7 @@ MODELS = {
     "claude": {"summary": "claude-haiku-5-5", "insight": "claude-haiku-5-5"},
 }
 API_KEY_ENV = {"openai": "OPENAI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
+RETRIES = 3  # OpenAI 호출 실패 시 재시도 횟수
 
 
 def generate(provider, task, system_prompt, user_prompt, api_key=None, client=None):
@@ -40,17 +41,14 @@ def _openai(model, system_prompt, user_prompt, client):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    retries = 3
-    retry_cnt = 0
     backoff_time = 10
-    while True:
+    for attempt in range(RETRIES + 1):
         try:
             response = client.chat.completions.create(model=model, messages=messages)
             return response.choices[0].message.content
         except Exception as e:
-            if retry_cnt >= retries:
+            if attempt == RETRIES:
                 raise
             print(f"{type(e).__name__}: {e}. Retrying in {backoff_time} seconds...")
             time.sleep(backoff_time)
             backoff_time *= 1.5
-            retry_cnt += 1
